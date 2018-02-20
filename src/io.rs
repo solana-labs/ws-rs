@@ -89,6 +89,7 @@ pub struct Handler<F>
     queue_tx: mio::channel::SyncSender<Command>,
     queue_rx: mio::channel::Receiver<Command>,
     timer: mio::timer::Timer<Timeout>,
+    next_connection_id: u32
 }
 
 
@@ -111,11 +112,12 @@ impl<F> Handler<F>
             queue_tx: tx,
             queue_rx: rx,
             timer: timer,
+            next_connection_id: 0
         }
     }
 
     pub fn sender(&self ) -> Sender {
-        Sender::new(ALL, self.queue_tx.clone())
+        Sender::new(ALL, self.queue_tx.clone(), 0)
     }
 
     pub fn listen(&mut self, poll: &mut Poll, addr: &SocketAddr) -> Result<&mut Handler<F>> {
@@ -144,9 +146,11 @@ impl<F> Handler<F>
         let settings = self.settings;
 
         let (tok, addresses) = {
-            let (tok, entry, handler) = if let Some(entry) = self.connections.vacant_entry() {
+            let (tok, entry, connection_id, handler) = if let Some(entry) = self.connections.vacant_entry() {
                 let tok = entry.index();
-                (tok, entry, self.factory.client_connected(Sender::new(tok, self.queue_tx.clone())))
+                let connection_id = self.next_connection_id;
+                self.next_connection_id = self.next_connection_id.wrapping_add(1);
+                (tok, entry, connection_id, self.factory.client_connected(Sender::new(tok, self.queue_tx.clone(), connection_id)))
             } else {
                 return Err(Error::new(Kind::Capacity, "Unable to add another connection to the event loop."));
             };
@@ -166,7 +170,7 @@ impl<F> Handler<F>
                             try!(sock.set_nodelay(true))
                         }
                         addresses.push(addr); // Replace the first addr in case ssl fails and we fallback
-                        entry.insert(Connection::new(tok, sock, handler, settings));
+                        entry.insert(Connection::new(tok, sock, handler, settings, connection_id));
                         break
                     }
                 } else {
@@ -229,9 +233,11 @@ impl<F> Handler<F>
         let settings = self.settings;
 
         let (tok, addresses) = {
-            let (tok, entry, handler) = if let Some(entry) = self.connections.vacant_entry() {
+            let (tok, entry, connection_id, handler) = if let Some(entry) = self.connections.vacant_entry() {
                 let tok = entry.index();
-                (tok, entry, self.factory.client_connected(Sender::new(tok, self.queue_tx.clone())))
+                let connection_id = self.next_connection_id;
+                self.next_connection_id = self.next_connection_id.wrapping_add(1);
+                (tok, entry, connection_id, self.factory.client_connected(Sender::new(tok, self.queue_tx.clone(), connection_id)))
             } else {
                 return Err(Error::new(Kind::Capacity, "Unable to add another connection to the event loop."));
             };
@@ -250,7 +256,7 @@ impl<F> Handler<F>
                         if settings.tcp_nodelay {
                             try!(sock.set_nodelay(true))
                         }
-                        entry.insert(Connection::new(tok, sock, handler, settings));
+                        entry.insert(Connection::new(tok, sock, handler, settings, connection_id));
                         break
                     }
                 } else {
@@ -303,8 +309,10 @@ impl<F> Handler<F>
         let tok = {
             if let Some(entry) = self.connections.vacant_entry() {
                 let tok = entry.index();
-                let handler = factory.server_connected(Sender::new(tok, self.queue_tx.clone()));
-                entry.insert(Connection::new(tok, sock, handler, settings));
+                let connection_id = self.next_connection_id;
+                self.next_connection_id = self.next_connection_id.wrapping_add(1);
+                let handler = factory.server_connected(Sender::new(tok, self.queue_tx.clone(), connection_id));
+                entry.insert(Connection::new(tok, sock, handler, settings, connection_id));
                 tok
             } else {
                 return Err(Error::new(Kind::Capacity, "Unable to add another connection to the event loop."));
@@ -346,8 +354,10 @@ impl<F> Handler<F>
         let tok = {
             if let Some(entry) = self.connections.vacant_entry() {
                 let tok = entry.index();
-                let handler = factory.server_connected(Sender::new(tok, self.queue_tx.clone()));
-                entry.insert(Connection::new(tok, sock, handler, settings));
+                let connection_id = self.next_connection_id;
+                self.next_connection_id = self.next_connection_id.wrapping_add(1);
+                let handler = factory.server_connected(Sender::new(tok, self.queue_tx.clone(), connection_id));
+                entry.insert(Connection::new(tok, sock, handler, settings, connection_id));
                 tok
             } else {
                 return Err(Error::new(Kind::Capacity, "Unable to add another connection to the event loop."));
@@ -404,7 +414,7 @@ impl<F> Handler<F>
                             error!("Websocket shutting down for interrupt.");
                             self.state = State::Inactive;
                         } else {
-                            error!("Websocket received interupt.");
+                            error!("Websocket received interrupt.");
                         }
                         0
                     } else {
@@ -449,7 +459,6 @@ impl<F> Handler<F>
 
     #[inline]
     fn check_active(&mut self, poll: &mut Poll, active: bool, token: Token) {
-
         // NOTE: Closing state only applies after a ws connection was successfully
         // established. It's possible that we may go inactive while in a connecting
         // state if the handshake fails.
@@ -567,6 +576,8 @@ impl<F> Handler<F>
                             self.connections[token].error(err)
                         }
                     }
+
+                    let conn_events = self.connections[token].events();
 
                     if (events & conn_events).is_writable() {
                         if let Err(err) = self.connections[token].write() {
@@ -702,11 +713,16 @@ impl<F> Handler<F>
                 }
             }
             token => {
+                let connection_id = cmd.connection_id();
                 match cmd.into_signal() {
                     Signal::Message(msg) => {
                         if let Some(conn) = self.connections.get_mut(token) {
-                            if let Err(err) = conn.send_message(msg) {
-                                conn.error(err)
+                            if conn.connection_id() == connection_id {
+                                if let Err(err) = conn.send_message(msg) {
+                                    conn.error(err)
+                                }
+                            } else {
+                                trace!("Connection disconnected while a message was waiting in the queue.")
                             }
                         } else {
                             trace!("Connection disconnected while a message was waiting in the queue.")
@@ -714,8 +730,12 @@ impl<F> Handler<F>
                     }
                     Signal::Close(code, reason) => {
                         if let Some(conn) = self.connections.get_mut(token) {
-                            if let Err(err) = conn.send_close(code, reason) {
-                                conn.error(err)
+                            if conn.connection_id() == connection_id {
+                                if let Err(err) = conn.send_close(code, reason) {
+                                    conn.error(err)
+                                }
+                            } else {
+                                trace!("Connection disconnected while close signal was waiting in the queue.")
                             }
                         } else {
                             trace!("Connection disconnected while close signal was waiting in the queue.")
@@ -723,8 +743,12 @@ impl<F> Handler<F>
                     }
                     Signal::Ping(data) => {
                         if let Some(conn) = self.connections.get_mut(token) {
-                            if let Err(err) = conn.send_ping(data) {
-                                conn.error(err)
+                            if conn.connection_id() == connection_id {
+                                if let Err(err) = conn.send_ping(data) {
+                                    conn.error(err)
+                                }
+                            } else {
+                                trace!("Connection disconnected while ping signal was waiting in the queue.")
                             }
                         } else {
                             trace!("Connection disconnected while ping signal was waiting in the queue.")
@@ -732,8 +756,12 @@ impl<F> Handler<F>
                     }
                     Signal::Pong(data) => {
                         if let Some(conn) = self.connections.get_mut(token) {
-                            if let Err(err) = conn.send_pong(data) {
-                                conn.error(err)
+                            if conn.connection_id() == connection_id {
+                                if let Err(err) = conn.send_pong(data) {
+                                    conn.error(err)
+                                }
+                            } else {
+                                trace!("Connection disconnected while pong signal was waiting in the queue.")
                             }
                         } else {
                             trace!("Connection disconnected while pong signal was waiting in the queue.")

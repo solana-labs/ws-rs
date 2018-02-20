@@ -1,5 +1,4 @@
 use std::mem::replace;
-use std::io::{Read, Write};
 
 #[cfg(feature="ssl")]
 use openssl::ssl::SslStream;
@@ -15,14 +14,14 @@ use util::{Token, Timeout};
 #[cfg(feature="ssl")]
 use util::TcpStream;
 
-use super::context::{Compresser, Decompresser};
+use super::context::{Compressor, Decompressor};
 
 
 /// Deflate Extension Handler Settings
 #[derive(Debug, Clone, Copy)]
 pub struct DeflateSettings {
     /// The max size of the sliding window. If the other endpoint selects a smaller size, that size
-    /// will be used instead. This must be an integer between 8 and 15 inclusive.
+    /// will be used instead. This must be an integer between 9 and 15 inclusive.
     /// Default: 15
     pub max_window_bits: u8,
     /// Indicates whether to ask the other endpoint to reset the sliding window for each message.
@@ -82,8 +81,8 @@ impl DeflateBuilder {
     /// Wrap another handler in with a deflate handler as configured.
     pub fn build<H: Handler>(&self, handler: H) -> DeflateHandler<H> {
         DeflateHandler {
-            com: Compresser::new(self.settings.max_window_bits as i8),
-            dec: Decompresser::new(self.settings.max_window_bits as i8),
+            com: Compressor::new(self.settings.max_window_bits as i8),
+            dec: Decompressor::new(self.settings.max_window_bits as i8),
             fragments: Vec::with_capacity(self.settings.fragments_capacity),
             compress_reset: false,
             decompress_reset: false,
@@ -102,8 +101,8 @@ impl DeflateBuilder {
 /// permessage-deflate specification and pass them to the child handler. Message frames sent from
 /// the child handler will be compressed and sent to the other endpoint using deflate compression.
 pub struct DeflateHandler<H: Handler> {
-    com: Compresser,
-    dec: Decompresser,
+    com: Compressor,
+    dec: Decompressor,
     fragments: Vec<Frame>,
     compress_reset: bool,
     decompress_reset: bool,
@@ -119,8 +118,8 @@ impl<H: Handler> DeflateHandler<H> {
         trace!("Using permessage-deflate handler.");
         let settings = DeflateSettings::default();
         DeflateHandler {
-            com: Compresser::new(settings.max_window_bits as i8),
-            dec: Decompresser::new(settings.max_window_bits as i8),
+            com: Compressor::new(settings.max_window_bits as i8),
+            dec: Decompressor::new(settings.max_window_bits as i8),
             fragments: Vec::with_capacity(settings.fragments_capacity),
             compress_reset: false,
             decompress_reset: false,
@@ -208,9 +207,9 @@ impl<H: Handler> Handler for DeflateHandler<H> {
                             param_iter.next(); // we already know the name
                             if let Some(window_bits_str) = param_iter.next() {
                                 if let Ok(window_bits) = window_bits_str.trim().parse() {
-                                    if window_bits >= 8 && window_bits <= 15 {
+                                    if window_bits >= 9 && window_bits <= 15 {
                                         if window_bits < self.settings.max_window_bits as i8 {
-                                            self.com = Compresser::new(window_bits);
+                                            self.com = Compressor::new(window_bits);
                                             res_ext.push_str("; ");
                                             res_ext.push_str(param)
                                         }
@@ -232,9 +231,9 @@ impl<H: Handler> Handler for DeflateHandler<H> {
                             param_iter.next(); // we already know the name
                             if let Some(window_bits_str) = param_iter.next() {
                                 if let Ok(window_bits) = window_bits_str.trim().parse() {
-                                    if window_bits >= 8 && window_bits <= 15 {
+                                    if window_bits >= 9 && window_bits <= 15 {
                                         if window_bits < self.settings.max_window_bits as i8 {
-                                            self.dec = Decompresser::new(window_bits);
+                                            self.dec = Decompressor::new(window_bits);
                                             res_ext.push_str("; ");
                                             res_ext.push_str(param);
                                             continue
@@ -343,9 +342,9 @@ impl<H: Handler> Handler for DeflateHandler<H> {
                             param_iter.next(); // we already know the name
                             if let Some(window_bits_str) = param_iter.next() {
                                 if let Ok(window_bits) = window_bits_str.trim().parse() {
-                                    if window_bits >= 8 && window_bits <= 15 {
+                                    if window_bits >= 9 && window_bits <= 15 {
                                         if window_bits as u8 != self.settings.max_window_bits {
-                                            self.dec = Decompresser::new(window_bits);
+                                            self.dec = Decompressor::new(window_bits);
                                         }
                                     } else {
                                         return Err(Error::new(
@@ -371,9 +370,9 @@ impl<H: Handler> Handler for DeflateHandler<H> {
                             param_iter.next(); // we already know the name
                             if let Some(window_bits_str) = param_iter.next() {
                                 if let Ok(window_bits) = window_bits_str.trim().parse() {
-                                    if window_bits >= 8 && window_bits <= 15 {
+                                    if window_bits >= 9 && window_bits <= 15 {
                                         if window_bits as u8 != self.settings.max_window_bits {
-                                            self.com = Compresser::new(window_bits);
+                                            self.com = Compressor::new(window_bits);
                                         }
                                     } else {
                                         return Err(Error::new(

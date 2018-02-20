@@ -1,3 +1,23 @@
+<a name="v0.7.3"></a>
+### v0.7.3 (2017-06-07)
+
+
+#### Bug Fixes
+
+*   Issue with `on_close` called twice
+
+
+<a name="v0.7.2"></a>
+### v0.7.2 (2017-06-04)
+
+
+#### Bug Fixes
+
+*   Issue with `on_close` called in infinite loop
+*   Token aliasing resolved
+
+
+
 <a name="v0.7.1"></a>
 ### v0.7.1 (2017-04-08)
 

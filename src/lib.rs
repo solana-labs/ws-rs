@@ -1,4 +1,5 @@
 //! Lightweight, event-driven WebSockets for Rust.
+#![allow(deprecated)]
 #![deny(
     missing_copy_implementations,
     trivial_casts, trivial_numeric_casts,
@@ -203,7 +204,7 @@ pub struct Settings {
     pub masking_strict: bool,
     /// The WebSocket protocol requires clients to verify the key returned by a server to ensure
     /// that the server and all intermediaries can perform the protocol. Verifying the key will
-    /// consume processing time and other resources with the benifit that we can fail the
+    /// consume processing time and other resources with the benefit that we can fail the
     /// connection early. The default in WS-RS is to accept any key from the server and instead
     /// fail late if a protocol error occurs. Change this setting to enable key verification.
     /// Default: false
@@ -284,7 +285,7 @@ impl<F> WebSocket<F>
     /// If the `addr_spec` yields multiple addresses this will return after the
     /// first successful bind. `local_addr` can be called to determine which
     /// address it ended up binding to.
-    /// After the server is succesfully bound you should start it using `run`.
+    /// After the server is successfully bound you should start it using `run`.
     pub fn bind<A>(mut self, addr_spec: A) -> Result<WebSocket<F>>
         where A: ToSocketAddrs
     {
@@ -316,7 +317,7 @@ impl<F> WebSocket<F>
     }
 
     /// Queue an outgoing connection on this WebSocket. This method may be called multiple times,
-    /// but the actual connections will not be established until after `run` is called.
+    /// but the actual connections will not be established until `run` is called.
     pub fn connect(&mut self, url: url::Url) -> Result<&mut WebSocket<F>> {
         let sender = self.handler.sender();
         info!("Queuing connection to {}", url);
@@ -324,8 +325,8 @@ impl<F> WebSocket<F>
         Ok(self)
     }
 
-    /// Run the WebSocket. This will run the encapsulated event loop blocking until the WebSocket
-    /// is shutdown.
+    /// Run the WebSocket. This will run the encapsulated event loop blocking the calling thread until
+    /// the WebSocket is shutdown.
     pub fn run(mut self) -> Result<WebSocket<F>> {
         try!(self.handler.run(&mut self.poll));
         Ok(self)
@@ -333,7 +334,7 @@ impl<F> WebSocket<F>
 
     /// Get a Sender that can be used to send messages on all connections.
     /// Calling `send` on this Sender is equivalent to calling `broadcast`.
-    /// Calling `shutdown` on this Sender will shudown the WebSocket even if no connections have
+    /// Calling `shutdown` on this Sender will shutdown the WebSocket even if no connections have
     /// been established.
     #[inline]
     pub fn broadcaster(&self) -> Sender {

@@ -94,12 +94,13 @@ pub struct Connection<H>
     addresses: Vec<SocketAddr>,
 
     settings: Settings,
+    connection_id: u32,
 }
 
 impl<H> Connection<H>
     where H: Handler
 {
-    pub fn new(tok: Token, sock: TcpStream, handler: H, settings: Settings) -> Connection<H> {
+    pub fn new(tok: Token, sock: TcpStream, handler: H, settings: Settings, connection_id: u32) -> Connection<H> {
         Connection {
             token: tok,
             socket: Stream::tcp(sock),
@@ -115,6 +116,7 @@ impl<H> Connection<H>
             handler: handler,
             addresses: Vec::new(),
             settings: settings,
+            connection_id: connection_id
         }
     }
 
@@ -165,6 +167,10 @@ impl<H> Connection<H>
 
     pub fn socket(&self) -> &TcpStream {
         self.socket.evented()
+    }
+
+    pub fn connection_id(&self) -> u32 {
+        self.connection_id
     }
 
     fn peer_addr(&self) -> String {
@@ -287,7 +293,11 @@ impl<H> Connection<H>
             Connecting(_, ref mut res) => {
                 match err.kind {
                     #[cfg(feature="ssl")]
-                    Kind::Ssl(_) | Kind::Io(_) => {
+                    Kind::Ssl(_) => {
+                        self.handler.on_error(err);
+                        self.events = Ready::empty();
+                    }
+                    Kind::Io(_) => {
                         self.handler.on_error(err);
                         self.events = Ready::empty();
                     }
@@ -591,8 +601,12 @@ impl<H> Connection<H>
                 while let Some(len) = try!(self.buffer_in()) {
                     try!(self.read_frames());
                     if len == 0 {
-                        self.events.remove(Ready::readable());
-                        break;
+                        if self.events.is_writable() {
+                            self.events.remove(Ready::readable());
+                        } else {
+                            self.disconnect()
+                        }
+                        break
                     }
                 }
                 Ok(())
@@ -721,6 +735,8 @@ impl<H> Connection<H>
                                         } else {
                                             try!(self.send_close(CloseCode::Invalid, ""));
                                         }
+                                    } else {
+                                        self.state = FinishedClose;
                                     }
                                 }
                             } else {
@@ -731,6 +747,8 @@ impl<H> Connection<H>
                                 self.handler.on_close(CloseCode::Status, "");
                                 if !self.state.is_closing() {
                                     try!(self.send_close(CloseCode::Empty, ""));
+                                } else {
+                                    self.state = FinishedClose;
                                 }
                             }
                         }
@@ -763,7 +781,7 @@ impl<H> Connection<H>
                                         try!(self.handler.on_message(Message::text(string)));
                                     }
                                     OpCode::Binary => {
-                                        trace!("Constructing text message from fragments: {:?} -> {:?} -> {:?}", first, self.fragments.iter().collect::<Vec<&Frame>>(), frame);
+                                        trace!("Constructing binary message from fragments: {:?} -> {:?} -> {:?}", first, self.fragments.iter().collect::<Vec<&Frame>>(), frame);
                                         let mut data = Vec::with_capacity(size);
                                         data.extend(first.into_data());
 

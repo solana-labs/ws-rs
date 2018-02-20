@@ -53,20 +53,22 @@ trait Context {
     }
 }
 
-pub struct Compresser {
-    stream: ffi::z_stream,
+pub struct Compressor {
+    // Box the z_stream to ensure it isn't moved. Moving the z_stream
+    // causes zlib to fail, because it maintains internal pointers.
+    stream: Box<ffi::z_stream>,
 }
 
-impl Compresser {
+impl Compressor {
 
-    pub fn new(window_bits: i8) -> Compresser {
-        debug_assert!(window_bits >= 8, "Received too small window size.");
+    pub fn new(window_bits: i8) -> Compressor {
+        debug_assert!(window_bits >= 9, "Received too small window size.");
         debug_assert!(window_bits <= 15, "Received too large window size.");
 
         unsafe {
-            let mut stream = mem::zeroed();
+            let mut stream: Box<ffi::z_stream> = Box::new(mem::zeroed());
             let result = ffi::deflateInit2_(
-                &mut stream,
+                stream.as_mut(),
                 9,
                 ffi::Z_DEFLATED,
                 -window_bits as c_int,
@@ -78,7 +80,7 @@ impl Compresser {
             assert!(
                  result == ffi::Z_OK,
                 "Failed to initialize compresser.");
-            Compresser { stream: stream }
+            Compressor { stream: stream }
         }
     }
 
@@ -103,7 +105,7 @@ impl Compresser {
 
     pub fn reset(&mut self) -> Result<()> {
         match unsafe {
-            ffi::deflateReset(&mut self.stream)
+            ffi::deflateReset(self.stream.as_mut())
         } {
             ffi::Z_OK => Ok(()),
             code => Err(Error::new(
@@ -113,16 +115,16 @@ impl Compresser {
     }
 }
 
-impl Context for Compresser {
+impl Context for Compressor {
     fn stream(&mut self) -> &mut ffi::z_stream {
-        &mut self.stream
+        self.stream.as_mut()
     }
 }
 
-impl Drop for Compresser {
+impl Drop for Compressor {
     fn drop(&mut self) {
         match unsafe {
-            ffi::deflateEnd(&mut self.stream)
+            ffi::deflateEnd(self.stream.as_mut())
         } {
             ffi::Z_STREAM_ERROR => error!("Compression stream encountered bad state."),
             // Ignore discarded data error because we are raw
@@ -132,19 +134,19 @@ impl Drop for Compresser {
     }
 }
 
-pub struct Decompresser {
-    stream: ffi::z_stream,
+pub struct Decompressor {
+    stream: Box<ffi::z_stream>,
 }
 
-impl Decompresser {
-    pub fn new(window_bits: i8) -> Decompresser {
+impl Decompressor {
+    pub fn new(window_bits: i8) -> Decompressor {
         debug_assert!(window_bits >= 8, "Received too small window size.");
         debug_assert!(window_bits <= 15, "Received too large window size.");
 
         unsafe {
-            let mut stream = mem::zeroed();
+            let mut stream: Box<ffi::z_stream> = Box::new(mem::zeroed());
             let result = ffi::inflateInit2_(
-                &mut stream,
+                stream.as_mut(),
                 -window_bits as c_int,
                 ZLIB_VERSION.as_ptr() as *const c_char,
                 mem::size_of::<ffi::z_stream>() as c_int,
@@ -152,7 +154,7 @@ impl Decompresser {
             assert!(
                  result == ffi::Z_OK,
                 "Failed to initialize decompresser.");
-            Decompresser { stream: stream }
+            Decompressor { stream: stream }
         }
     }
 
@@ -177,7 +179,7 @@ impl Decompresser {
 
     pub fn reset(&mut self) -> Result<()> {
         match unsafe {
-            ffi::inflateReset(&mut self.stream)
+            ffi::inflateReset(self.stream.as_mut())
         } {
             ffi::Z_OK => Ok(()),
             code => Err(Error::new(
@@ -187,16 +189,16 @@ impl Decompresser {
     }
 }
 
-impl Context for Decompresser {
+impl Context for Decompressor {
     fn stream(&mut self) -> &mut ffi::z_stream {
-        &mut self.stream
+        self.stream.as_mut()
     }
 }
 
-impl Drop for Decompresser {
+impl Drop for Decompressor {
     fn drop(&mut self) {
         match unsafe {
-            ffi::inflateEnd(&mut self.stream)
+            ffi::inflateEnd(self.stream.as_mut())
         } {
             ffi::Z_STREAM_ERROR => error!("Decompression stream encountered bad state."),
             ffi::Z_OK => trace!("Deallocated decompression context."),
@@ -224,13 +226,15 @@ mod test {
             let mut compressed = Vec::with_capacity(data.len());
             let mut decompressed = Vec::with_capacity(data.len());
 
-            let mut com = Compresser::new(i);
+            let com = Compressor::new(i);
+            let mut moved_com = com;
 
-            com.compress(&data, &mut compressed).expect("Failed to compress data.");
+            moved_com.compress(&data, &mut compressed).expect("Failed to compress data.");
 
-            let mut dec = Decompresser::new(i);
+            let dec = Decompressor::new(i);
+            let mut moved_dec = dec;
 
-            dec.decompress(&compressed, &mut decompressed).expect("Failed to decompress data.");
+            moved_dec.decompress(&compressed, &mut decompressed).expect("Failed to decompress data.");
 
             assert_eq!(data, &decompressed[..]);
         }
@@ -248,14 +252,14 @@ mod test {
         let mut decompressed2 = Vec::with_capacity(data2.len());
         let mut decompressed2_ind = Vec::with_capacity(data2.len());
 
-        let mut com = Compresser::new(9);
+        let mut com = Compressor::new(9);
 
         com.compress(&data1, &mut compressed1).unwrap();
         com.compress(&data2, &mut compressed2).unwrap();
         com.reset().unwrap();
         com.compress(&data2, &mut compressed2_ind).unwrap();
 
-        let mut dec = Decompresser::new(9);
+        let mut dec = Decompressor::new(9);
 
         dec.decompress(&compressed1, &mut decompressed1).unwrap();
         dec.decompress(&compressed2, &mut decompressed2).unwrap();

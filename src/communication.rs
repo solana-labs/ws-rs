@@ -8,6 +8,7 @@ use mio::Token;
 use message;
 use result::{Result, Error};
 use protocol::CloseCode;
+use std::cmp::PartialEq;
 use io::ALL;
 
 #[derive(Debug, Clone)]
@@ -29,6 +30,7 @@ pub enum Signal {
 pub struct Command {
     token: Token,
     signal: Signal,
+    connection_id: u32,
 }
 
 impl Command {
@@ -39,6 +41,10 @@ impl Command {
     pub fn into_signal(self) -> Signal {
         self.signal
     }
+
+    pub fn connection_id(&self) -> u32 {
+        self.connection_id
+    }
 }
 
 /// A representation of the output of the WebSocket connection. Use this to send messages to the
@@ -47,16 +53,24 @@ impl Command {
 pub struct Sender {
     token: Token,
     channel: mio::channel::SyncSender<Command>,
+    connection_id: u32,
+}
+
+impl PartialEq for Sender {
+    fn eq(&self, other: &Sender) -> bool {
+        self.token == other.token && self.connection_id == other.connection_id
+    }
 }
 
 impl Sender {
 
     #[doc(hidden)]
     #[inline]
-    pub fn new(token: Token, channel: mio::channel::SyncSender<Command>) -> Sender {
+    pub fn new(token: Token, channel: mio::channel::SyncSender<Command>, connection_id: u32) -> Sender {
         Sender {
             token: token,
             channel: channel,
+            connection_id: connection_id
         }
     }
 
@@ -64,6 +78,12 @@ impl Sender {
     #[inline]
     pub fn token(&self) -> Token {
         self.token
+    }
+
+    /// A connection_id identifying this sender within the WebSocket.
+    #[inline]
+    pub fn connection_id(&self) -> u32 {
+        self.connection_id
     }
 
     /// Send a message over the connection.
@@ -74,6 +94,7 @@ impl Sender {
         self.channel.send(Command {
             token: self.token,
             signal: Signal::Message(msg.into()),
+            connection_id: self.connection_id,
         }).map_err(Error::from)
     }
 
@@ -91,6 +112,7 @@ impl Sender {
         self.channel.send(Command {
             token: ALL,
             signal: Signal::Message(msg.into()),
+            connection_id: self.connection_id,
         }).map_err(Error::from)
     }
 
@@ -100,6 +122,7 @@ impl Sender {
         self.channel.send(Command {
             token: self.token,
             signal: Signal::Close(code, "".into()),
+            connection_id: self.connection_id,
         }).map_err(Error::from)
     }
 
@@ -111,6 +134,7 @@ impl Sender {
         self.channel.send(Command {
             token: self.token,
             signal: Signal::Close(code, reason.into()),
+            connection_id: self.connection_id,
         }).map_err(Error::from)
     }
 
@@ -120,6 +144,7 @@ impl Sender {
         self.channel.send(Command {
             token: self.token,
             signal: Signal::Ping(data),
+            connection_id: self.connection_id,
         }).map_err(Error::from)
     }
 
@@ -129,6 +154,7 @@ impl Sender {
         self.channel.send(Command {
             token: self.token,
             signal: Signal::Pong(data),
+            connection_id: self.connection_id,
         }).map_err(Error::from)
     }
 
@@ -138,6 +164,7 @@ impl Sender {
         self.channel.send(Command {
             token: self.token,
             signal: Signal::Connect(url),
+            connection_id: self.connection_id,
         }).map_err(Error::from)
     }
 
@@ -147,6 +174,7 @@ impl Sender {
         self.channel.send(Command {
             token: self.token,
             signal: Signal::Shutdown,
+            connection_id: self.connection_id,
         }).map_err(Error::from)
     }
 
@@ -160,19 +188,21 @@ impl Sender {
                 delay: ms,
                 token: token,
             },
+            connection_id: self.connection_id,
         }).map_err(Error::from)
     }
 
     /// Queue the cancellation of a previously scheduled timeout.
     ///
-    /// This method is not guaranteed to prevent the timeout from occuring, because it is
-    /// possible to call this method after a timeout has already occured. It is still necessary to
+    /// This method is not guaranteed to prevent the timeout from occurring, because it is
+    /// possible to call this method after a timeout has already occurred. It is still necessary to
     /// handle spurious timeouts.
     #[inline]
     pub fn cancel(&self, timeout: mio::timer::Timeout) -> Result<()> {
         self.channel.send(Command {
             token: self.token,
             signal: Signal::Cancel(timeout),
+            connection_id: self.connection_id,
         }).map_err(Error::from)
     }
 
