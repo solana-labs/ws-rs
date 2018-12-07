@@ -18,6 +18,7 @@ pub trait Factory {
     /// This method can be used to differentiate a client aspect for a handler.
     ///
     /// ```
+    /// extern crate solana_ws as ws;
     /// use ws::{Sender, Factory, Handler};
     ///
     /// struct MyHandler {
@@ -57,6 +58,7 @@ pub trait Factory {
     /// This method can be used to differentiate a server aspect for a handler.
     ///
     /// ```
+    /// extern crate solana_ws as ws;
     /// use ws::{Sender, Factory, Handler};
     ///
     /// struct MyHandler {

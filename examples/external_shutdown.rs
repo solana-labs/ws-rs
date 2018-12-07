@@ -1,4 +1,4 @@
-extern crate ws;
+extern crate solana_ws as ws;
 
 use std::sync::mpsc::channel;
 use std::thread;

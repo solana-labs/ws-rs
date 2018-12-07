@@ -2,7 +2,7 @@ extern crate env_logger;
 #[cfg(feature = "ssl")]
 extern crate openssl;
 extern crate url;
-extern crate ws;
+extern crate solana_ws as ws;
 
 #[cfg(feature = "ssl")]
 use openssl::ssl::{SslConnector, SslMethod, SslStream, SslVerifyMode};

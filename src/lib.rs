@@ -64,6 +64,7 @@ use mio::Poll;
 /// # Examples
 ///
 /// ```no_run
+/// extern crate solana_ws as ws;
 /// use ws::listen;
 ///
 /// listen("127.0.0.1:3012", |out| {
@@ -95,6 +96,7 @@ where
 /// # Examples
 ///
 /// ```no_run
+/// extern crate solana_ws as ws;
 /// use ws::{connect, CloseCode};
 ///
 /// connect("ws://127.0.0.1:3012", |out| {
