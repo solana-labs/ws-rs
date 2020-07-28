@@ -169,6 +169,9 @@ pub struct Settings {
     /// false, a Capacity error will be triggered instead.
     /// Default: true
     pub in_buffer_grow: bool,
+    /// Maximal size of incoming buffer. Will not re-allocate in case this value is reached.
+    /// Default: usize::max_value()
+    pub max_in_buffer: usize,
     /// The size of the outgoing buffer. A larger buffer uses more memory but will allow for fewer
     /// reallocations.
     /// Default: 2048
@@ -251,6 +254,7 @@ impl Default for Settings {
             max_fragment_size: usize::max_value(),
             in_buffer_capacity: 2048,
             in_buffer_grow: true,
+            max_in_buffer: usize::max_value(),
             out_buffer_capacity: 2048,
             out_buffer_grow: true,
             panic_on_internal: true,

@@ -1212,6 +1212,9 @@ where
                 new.extend(&self.in_buffer.get_ref()[self.in_buffer.position() as usize..]);
                 if new.len() == new.capacity() {
                     if self.settings.in_buffer_grow {
+                        if new.capacity() >= self.settings.max_in_buffer {
+                            return Err(Error::new(Kind::Capacity, "Maxed out input buffer for connection."))
+                        }
                         new.reserve(self.settings.in_buffer_capacity);
                     } else {
                         return Err(Error::new(

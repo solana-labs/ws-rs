@@ -16,6 +16,8 @@ fn apply_mask(buf: &mut [u8], mask: &[u8; 4]) {
     }
 }
 
+const MAX_FRAME_PAYLOAD_SIZE: u64 = 5 * 1024 * 1024;
+
 /// A struct representing a WebSocket frame.
 #[derive(Debug, Clone)]
 pub struct Frame {
@@ -297,6 +299,7 @@ impl Frame {
             };
             header_length += length_nbytes as u64;
         }
+
         trace!("Payload length: {}", length);
 
         if length > max_payload_length {
