@@ -1,4 +1,3 @@
-use log::Level::Error as ErrorLevel;
 #[cfg(feature = "nativetls")]
 use native_tls::{TlsConnector, TlsStream as SslStream};
 #[cfg(feature = "ssl")]
@@ -61,12 +60,6 @@ pub trait Handler {
         }
 
         error!("{:?}", err);
-        if !log_enabled!(ErrorLevel) {
-            println!(
-                "Encountered an error: {}\nEnable a logger to see more information.",
-                err
-            );
-        }
     }
 
     // handshake events
@@ -317,13 +310,14 @@ pub trait Handler {
             Kind::Protocol,
             format!("Unable to parse domain from {}. Needed for SSL.", url),
         ))?;
-        let connector = TlsConnector::builder().and_then(|builder| builder.build())
-            .map_err(|e| {
-                Error::new(
-                    Kind::Internal,
-                    format!("Failed to upgrade client to SSL: {}", e),
-                )
-            })?;
+
+        let connector = TlsConnector::new().map_err(|e| {
+            Error::new(
+                Kind::Internal,
+                format!("Failed to upgrade client to SSL: {}", e),
+            )
+        })?;
+
         connector.connect(domain, stream).map_err(Error::from)
     }
     /// A method for wrapping a server TcpStream with Ssl Authentication machinery

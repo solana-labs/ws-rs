@@ -182,7 +182,7 @@ where
                 HandshakeError::Failure(_) => {
                     Err(Error::new(Kind::SslHandshake(handshake_err), details))
                 }
-                HandshakeError::Interrupted(mid) => {
+                HandshakeError::WouldBlock(mid) => {
                     self.socket = Stream::tls(mid);
                     Ok(())
                 }
@@ -252,7 +252,7 @@ where
                                 HandshakeError::Failure(_) => {
                                     Err(Error::new(Kind::SslHandshake(handshake_err), details))
                                 }
-                                HandshakeError::Interrupted(mid) => {
+                                HandshakeError::WouldBlock(mid) => {
                                     self.socket = Stream::tls(mid);
                                     Ok(())
                                 }
@@ -609,6 +609,9 @@ where
                             end
                         };
                         res.get_mut().truncate(end);
+                    } else {
+                        // NOTE: wait to be polled again; response not ready.
+                        return Ok(());
                     }
                 }
             }
@@ -714,7 +717,8 @@ where
     }
 
     fn read_frames(&mut self) -> Result<()> {
-        while let Some(mut frame) = Frame::parse(&mut self.in_buffer)? {
+        let max_size = self.settings.max_fragment_size as u64;
+        while let Some(mut frame) = Frame::parse(&mut self.in_buffer, max_size)? {
             match self.state {
                 // Ignore data received after receiving close frame
                 RespondingClose | FinishedClose => continue,

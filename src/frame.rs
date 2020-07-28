@@ -246,7 +246,7 @@ impl Frame {
     }
 
     /// Parse the input stream into a frame.
-    pub fn parse(cursor: &mut Cursor<Vec<u8>>) -> Result<Option<Frame>> {
+    pub fn parse(cursor: &mut Cursor<Vec<u8>>, max_payload_length: u64) -> Result<Option<Frame>> {
         let size = cursor.get_ref().len() as u64 - cursor.position();
         let initial = cursor.position();
         trace!("Position in buffer {}", initial);
@@ -302,11 +302,15 @@ impl Frame {
 
         trace!("Payload length: {}", length);
 
-        if length > MAX_FRAME_PAYLOAD_SIZE {
-            warn!("Payload exceeds max: {} > {}. Rejecting.", length, MAX_FRAME_PAYLOAD_SIZE);
-            return Err(Error::new(Kind::Protocol, format!("Rejecting too large payload: {}", length)));
+        if length > max_payload_length {
+            return Err(Error::new(
+                Kind::Protocol,
+                format!(
+                    "Rejected frame with payload length exceeding defined max: {}.",
+                    max_payload_length
+                ),
+            ));
         }
-
 
         let mask = if masked {
             let mut mask_bytes = [0u8; 4];
