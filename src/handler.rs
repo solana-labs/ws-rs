@@ -1,4 +1,3 @@
-use log::Level::Error as ErrorLevel;
 #[cfg(feature = "nativetls")]
 use native_tls::{TlsConnector, TlsStream as SslStream};
 #[cfg(feature = "ssl")]
@@ -61,12 +60,6 @@ pub trait Handler {
         }
 
         error!("{:?}", err);
-        if !log_enabled!(ErrorLevel) {
-            println!(
-                "Encountered an error: {}\nEnable a logger to see more information.",
-                err
-            );
-        }
     }
 
     // handshake events
